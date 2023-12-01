@@ -2,20 +2,29 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
-import "professional.sol";
+import "ERC20.sol";
 
-contract main is ERC1155, proffesional {
+interface IProfi is IERC20 {
+    function mintReferal(address) external;
+    function decimals() external pure returns (uint8);
+    function transferToken(address, address, uint256) external;
+}
+
+contract main is ERC1155("") {
     struct Referal {
         address provider;
         uint8 discount;
     }
 
     struct Collection {
+        uint256 id;
         string title;
         string description;
+        uint256[] ids;
     }
 
     struct Asset {
+        uint256 id;
         string title;
         string description;
         string image;
@@ -23,115 +32,124 @@ contract main is ERC1155, proffesional {
         uint256 issued;
         uint256 available;
         uint256 creation_date;
-        uint256 collection;
     }
 
     struct Bet {
         address wallet;
-        uint256 amount;
+        uint256 sum;
     }
 
-    address owner = msg.sender;
-    uint256 tokensCount = 0;
-    uint256 collectionsCount = 0;
+    struct Auction {
+        Collection collection;
+        uint256 timeStart;
+        uint256 timeEnd;
+        uint256 startPrice;
+        uint256 maxPrice;
+        Bet lastBet;
+    }
 
-    mapping(string => Referal) codeToReferal;
-    mapping(address => string) ownerToCode;
-    mapping(address => Referal) activatedReferal;
-    mapping(uint256 => Asset) Assets;
-    mapping(uint256 => Collection) CollectionNFT;
-    mapping(uint256 => uint256) NFTtoCollection;
+    struct Sell {
+        address seller;
+        uint256 NFTid;
+        uint256 amount;
+        uint256 price;
+    }
+
+    IProfi private profi;
+    address private owner = msg.sender;
+    
+    Asset[] private assets;
+    Auction[] private auctions;
+    Collection[] private collections;
+    Sell[] private sells;
+    uint256[] private ownerCollections;
+
+    mapping(string => Referal) private codeToReferal;
+    mapping(address => string) private ownerToCode;
+    mapping(address => bool) private activatedReferal;
+    mapping(uint256 => uint256) private NFTtoCollection;
+    mapping(address => uint256[]) private ownNFTs;
+    mapping(uint256 => Bet[]) private bets;
+    mapping(address => uint256[]) private wonLots;
 
     modifier onlyOwner {
-        require(msg.sender == owner, unicode"Вы не владелец системы");
+        require(msg.sender == owner, unicode"Недостаточно прав");
         _;
     }
 
-    constructor() ERC1155("") {
-        _createSingleNFT(
-            unicode"Герда в профиль", 
-            unicode"Скучающая хаски по имени Герда", 
-            "husky_nft1.png", 
-            2000 * 10**decimals(), 
-            7,
-            0
-        );
-        _createSingleNFT(
-            unicode"Герда на фрилансе", 
-            unicode"Герда релизнула новый проект", 
-            "husky_nft2.png", 
-            5000 * 10**decimals(), 
-            5,
-            0
-        );
-        _createSingleNFT(
-            unicode"Новогодняя Герда", 
-            unicode"Герда ждет боя курантов", 
-            "husky_nft3.png", 
-            3500 * 10**decimals(), 
-            2,
-            0
-        );
-        _createSingleNFT(
-            unicode"Герда в отпуске", 
-            unicode"Приехала отдохнуть после тяжелого проекта", 
-            "husky_nft4.png", 
-            4000 * 10**decimals(), 
-            6,
-            0
-        );
-
-        string[] memory spaceKittiesTitles;
-        spaceKittiesTitles[0] = unicode"Комочек";
-        spaceKittiesTitles[1] = unicode"Вкусняшка";
-        spaceKittiesTitles[2] = unicode"Пузырик";
-        string[] memory spaceKittiesDescriptions;
-        spaceKittiesDescriptions[0] = unicode"Комочек слился с космосом";
-        spaceKittiesDescriptions[1] = unicode"Вкусняшка впервые пробует японскую кухню";
-        spaceKittiesDescriptions[2] = unicode"Пузырик похитил котика с Земли";
-        string[] memory spaceKittiesImages;
-        spaceKittiesImages[0] = "cat_nft1.png";
-        spaceKittiesImages[1] = "cat_nft2.png";
-        spaceKittiesImages[2] = "cat_nft3.png";
-        uint256[] memory spaceKittiesIssued;
-        spaceKittiesIssued[0] = 1;
-        spaceKittiesIssued[1] = 1;
-        spaceKittiesIssued[2] = 1;
-
-        _createCollectionNFT(
-            unicode"Космические котики", 
-            unicode"Они путешествуют по вселенной",
-            spaceKittiesTitles,
-            spaceKittiesDescriptions,
-            spaceKittiesImages,
-            spaceKittiesIssued
-        );
-
-        string[] memory pedestriansTitles;
-        pedestriansTitles[0] = unicode"Баскетболист";
-        pedestriansTitles[0] = unicode"Волшебник";
-        string[] memory pedestriansDescriptions;
-        pedestriansDescriptions[0] = unicode"Он идет играть в баскетбол";
-        pedestriansDescriptions[0] = unicode"Он идет колдовать";
-        string[] memory pedestriansImages;
-        pedestriansImages[0] = "walker_nft1.png";
-        pedestriansImages[1] = "walker_nft2.png";
-        uint256[] memory pedestriansIssued;
-        pedestriansIssued[0] = 1;
-        pedestriansIssued[1] = 1;
-
-        _createCollectionNFT(
-            unicode"Пешеходы",
-            unicode"Куда они идут?",
-            pedestriansTitles,
-            pedestriansDescriptions,
-            pedestriansImages,
-            pedestriansIssued
-        );
+    modifier auctionIsActive(uint256 index) {
+        require(auctions[index].timeStart <= block.timestamp, unicode"Аукцион ещё не начался");
+        require(block.timestamp < auctions[index].timeEnd, unicode"Лот неактивен");
+        _;
     }
 
-    function transferProfi(address to, uint256 amount) external {
-        _transferToken(msg.sender, to, amount);
+    modifier afterSpendNFT(uint256 index) {
+        _;
+        if (balanceOf(msg.sender, ownNFTs[msg.sender][index]) == 0) {
+            delete ownNFTs[msg.sender][index];
+        }
+    }
+
+    constructor(address profiAddress) {
+        profi = IProfi(profiAddress);
+        assets.push(Asset(
+            1,
+            unicode"Комочек", 
+            unicode"Комочек слился с космосом", 
+            "cat_nft1.png", 
+            0, 
+            1,
+            0, 
+            block.timestamp
+        ));
+        assets.push(Asset(
+            2,
+            unicode"Вкусняшка", 
+            unicode"Вкусняшка впервые пробует японскую кухню", 
+            "cat_nft2.png", 
+            0, 
+            1,
+            0, 
+            block.timestamp
+        ));
+        assets.push(Asset(
+            3,
+            unicode"Пузырик", 
+            unicode"Пузырик похитил котика с Земли", 
+            "cat_nft3.png", 
+            0, 
+            1,
+            0, 
+            block.timestamp
+        ));
+        assets.push(Asset(
+            4,
+            unicode"Баскетболист", 
+            unicode"Он идет играть в баскетбол", 
+            "walker_nft1.png", 
+            0, 
+            1,
+            0, 
+            block.timestamp
+        ));
+        assets.push(Asset(
+            5,
+            unicode"Волшебник", 
+            unicode"Он идет колдовать", 
+            "walker_nft1.png", 
+            0, 
+            1,
+            0, 
+            block.timestamp
+        ));
+
+        ownNFTs[msg.sender] = [1, 2, 3, 4, 5];
+
+        _mint(msg.sender, 1, 1, "");
+        _mint(msg.sender, 2, 1, "");
+        _mint(msg.sender, 3, 1, "");
+        _mint(msg.sender, 4, 1, "");
+        _mint(msg.sender, 5, 1, "");
     }
 
     function createReferal(string calldata wallet) external {
@@ -143,27 +161,48 @@ contract main is ERC1155, proffesional {
     }
 
     function activateReferalCode(string calldata code) external {
-        require(activatedReferal[msg.sender].provider == address(0), unicode"Вы уже активировали реферальный код");
+        require(!activatedReferal[msg.sender], unicode"Вы уже активировали реферальный код");
+        require(codeToReferal[code].provider != address(0), unicode"Такого кода нет");
         require(codeToReferal[code].provider != msg.sender, unicode"Нельзя активировать свой реферальный код");
-        _mintReferal();
-        activatedReferal[msg.sender] = codeToReferal[code];
+        profi.mintReferal(msg.sender);
+        activatedReferal[msg.sender] = true;
         if (codeToReferal[code].discount < 3) {
             codeToReferal[code].discount++;
         }
     }
 
-    function sellNFT(uint256 NFTid, uint256 price) external {
+    function sellNFT(uint256 index, uint256 amount, uint256 price) external afterSpendNFT(index) {
+        uint256 id = ownNFTs[msg.sender][index];
+        require(NFTtoCollection[id] == 0 || msg.sender != owner, unicode"Вы не можете продать часть коллекции");
+        bool notFound = true;
+        for (uint256 i = 0; i < sells.length; i++) {
+            if (sells[i].seller == msg.sender && sells[i].price == price && sells[i].NFTid == id) {
+                notFound = false;
+                sells[i].amount += amount;
+                break;
+            }
+        }
+        if (notFound) {
+            sells.push(Sell(msg.sender, id, amount, price));
+        }
 
+        _burn(msg.sender, id, amount);
     }
 
-    function openAuction(
-        uint256 CollectionId, 
-        uint256 startBet,
-        uint256 maxBet,
-        uint256 timeStart, 
-        uint256 timeEnd
-    ) external onlyOwner {
+    function buyNFT(uint256 index, uint256 amount) external {
+        require(amount <= sells[index].amount, unicode"Нельзя купить больше, чем продаётся");
+        profi.transferToken(msg.sender, sells[index].seller, sells[index].price * amount * (codeToReferal[ownerToCode[msg.sender]].discount / 100));
 
+        if (balanceOf(msg.sender, sells[index].NFTid) == 0) {
+            ownNFTs[msg.sender].push(sells[index].NFTid);
+        }
+        _mint(msg.sender, sells[index].NFTid, amount, "");
+
+        if (sells[index].amount == amount) {
+            delete sells[index];
+        } else {
+            sells[index].amount -= amount;
+        }
     }
 
     function createSingleNFT(
@@ -171,94 +210,179 @@ contract main is ERC1155, proffesional {
         string memory description,
         string memory image,
         uint256 price,
-        uint256 issued,
-        uint256 collection
+        uint256 issued
     ) external onlyOwner {
-        _createSingleNFT(
-            title,
-            description,
-            image,
-            price,
-            issued,
-            collection
-        );
-    }
-
-    function createCollectionNFT(
-        string memory collectionTitle,
-        string memory collectionDescription,
-        string[] memory titles,
-        string[] memory descriptions,
-        string[] memory images,
-        uint256[] memory issued
-    ) external onlyOwner {
-        _createCollectionNFT(
-            collectionTitle,
-            collectionDescription,
-            titles,
-            descriptions,
-            images,
-            issued
-        );
-    }
-
-    function getOwnCode() external view returns(string memory) {
-        return ownerToCode[msg.sender];
-    }
-
-    function _createSingleNFT(
-        string memory title,
-        string memory description,
-        string memory image,
-        uint256 price,
-        uint256 issued,
-        uint256 collection
-    ) private {
-        uint256 tokenNumber = tokensCount++;
-        Assets[tokenNumber] = Asset(
+        uint256 tokenNumber = assets.length + 1;
+        assets.push(Asset(
+            tokenNumber,
             title, 
             description, 
             image, 
             price, 
             issued, 
             0, 
-            block.timestamp,
-            collection
-        );
+            block.timestamp
+        ));
+        ownNFTs[msg.sender].push(tokenNumber);
         
         _mint(owner, tokenNumber, issued, "");
     }
 
-    function _createCollectionNFT(
+    function createCollectionNFT(
         string memory collectionTitle,
         string memory collectionDescription,
-        string[] memory titles,
-        string[] memory descriptions,
-        string[] memory images,
-        uint256[] memory issued
-    ) private {
-        uint256 collectionNumber = collectionsCount++ + 1;
-        CollectionNFT[collectionNumber] = Collection(collectionTitle, collectionDescription);
+        uint256[] memory ids
+    ) external onlyOwner {
+        uint256 collectionNumber = collections.length + 1;
 
-        uint256[] memory ids;
-
-        for (uint256 i = 0; i < titles.length; i++) {
-            uint256 tokenNumber = tokensCount++;
-            Assets[tokenNumber] = Asset(
-                titles[i],
-                descriptions[i],
-                images[i],
-                0, 
-                issued[i],
-                0, 
-                block.timestamp,
-                collectionNumber
-            );
-            NFTtoCollection[tokenNumber] = collectionNumber;
-
-            ids[i] = tokenNumber;
+        for (uint256 i = 0; i < ids.length; i++) {
+            uint256 id = ids[i];
+            require(NFTtoCollection[id] == 0, unicode"Один из токенов уже состоит в коллекции");
+            require(assets[id - 1].issued > 0, unicode"Одного из токенов не существует");
+            NFTtoCollection[id] = collectionNumber;
         }
 
-        _mintBatch(msg.sender, ids, issued, "");
+        Collection memory newCollection = Collection(collectionNumber, collectionTitle, collectionDescription, ids);
+        collections.push(newCollection);
+        ownerCollections.push(collectionNumber);
+    }
+
+    function transferNFT(address to, uint256 index, uint256 amount) external afterSpendNFT(index) {
+        uint256 id = ownNFTs[msg.sender][index];
+        _safeTransferFrom(msg.sender, to, id, amount, "");
+
+        if (balanceOf(to, id) == 0) {
+            ownNFTs[to].push(id);
+        }
+    }
+
+    function startAuction(uint256 collectionIndex, uint256 asideTime, uint256 duration, uint256 startPrice, uint256 maxPrice) external onlyOwner {
+        require(ownerCollections[collectionIndex] != 0, unicode"Коллекции не существует");
+        require(maxPrice > startPrice, unicode"Максимальная ставка должна быть больше стартовой");
+        auctions.push(Auction(
+            collections[ownerCollections[collectionIndex] - 1], 
+            block.timestamp + asideTime, 
+            block.timestamp + asideTime + duration, 
+            startPrice, 
+            maxPrice, 
+            Bet(msg.sender, startPrice)
+        ));
+        delete ownerCollections[collectionIndex];
+    }
+
+    function checkAuctionExpired(uint256 index) external onlyOwner {
+        require(auctions[index].maxPrice != 0, unicode"Лот не существует");
+        if (block.timestamp > auctions[index].timeEnd) {
+            _sendWinning(index);
+        }
+    }
+
+    function finishAuction(uint256 index) external onlyOwner auctionIsActive(index) {
+        auctions[index].timeEnd = block.timestamp;
+        _sendWinning(index);
+    }
+
+    function bid(uint256 index, uint256 sum) external auctionIsActive(index) {
+        profi.transferToken(msg.sender, owner, sum);
+        bool notFound = true;
+        uint256 betsCount = bets[index].length;
+        for (uint256 i = 0; i < betsCount; i++) {
+            if (bets[index][i].wallet == msg.sender) {
+                notFound = false;
+                require(bets[index][i].sum + sum > auctions[index].lastBet.sum, unicode"Маленькая ставка");
+                bets[index][i].sum += sum;
+                auctions[index].lastBet = bets[index][i];
+                break;
+            }
+        }
+        if (notFound) {
+            require(sum > auctions[index].lastBet.sum, unicode"Маленькая ставка");
+            bets[index].push(Bet(msg.sender, sum));
+            auctions[index].lastBet = bets[index][betsCount];
+        }
+    }
+
+    function getNFTCollection(uint256 NFTid) external view returns(uint256) {
+        return NFTtoCollection[NFTid];
+    }
+
+    function getActivatedReferal() external view returns(bool) {
+        return activatedReferal[msg.sender];
+    }
+
+    function getAuctions() external view returns(Auction[] memory)  {
+        return auctions;
+    }
+
+    function getBets(uint256 auctionIndex) external view returns(Bet[] memory) {
+        return bets[auctionIndex];
+    }
+
+    function getMyBet(uint256 auctionIndex) external view returns(Bet memory) {
+        for (uint256 i = 0; i < bets[auctionIndex].length; i++) {
+            if (bets[auctionIndex][i].wallet == msg.sender) {
+                return bets[auctionIndex][i];
+            }
+        }
+        return Bet(address(0), 0);
+    }
+
+    function getSells() external view returns(Sell[] memory) {
+        return sells;
+    }
+
+    function getAsset(uint256 id) external view returns(Asset memory) {
+        return assets[id - 1];
+    }
+
+    function getAssets() external view returns(Asset[] memory) {
+        return assets;
+    }
+
+    function getCollections() external view returns(Collection[] memory) {
+        return collections;
+    }
+
+    function getMyNFTs() external view returns(Asset[] memory, uint256[] memory) {
+        address[] memory sender = new address[](ownNFTs[msg.sender].length);
+        Asset[] memory NFTs = new Asset[](ownNFTs[msg.sender].length);
+        for (uint256 i = 0; i < ownNFTs[msg.sender].length; i++) {
+            if (ownNFTs[msg.sender][i] != 0) {
+                sender[i] = msg.sender;
+                NFTs[i] = assets[ownNFTs[msg.sender][i] - 1];
+            }
+        }
+        return (NFTs, balanceOfBatch(sender, ownNFTs[msg.sender]));
+    }
+
+    function getOwnerCollections() external view onlyOwner returns(uint256[] memory) {
+        return ownerCollections;
+    }
+
+    function getBalance() external view returns(uint256) {
+        return profi.balanceOf(msg.sender);
+    }
+
+    function getMyDiscount() external view returns(uint256) {
+        return codeToReferal[ownerToCode[msg.sender]].discount;
+    }
+
+    function getMyCode() external view returns(string memory) {
+        return ownerToCode[msg.sender];
+    }
+
+    function getWonLots() external view returns(uint256[] memory) {
+        return wonLots[msg.sender];
+    }
+
+    function _sendWinning(uint256 index) private {
+        address winner = auctions[index].lastBet.wallet;
+        uint256[] memory ids = auctions[index].collection.ids;
+        uint256[] memory amounts = new uint256[](ids.length);
+        wonLots[winner].push(index);
+        for (uint256 i = 0; i < ids.length; i++) {
+            amounts[i] = balanceOf(msg.sender, ids[i]);
+        }
+        _safeBatchTransferFrom(owner, winner, ids, amounts, "");
     }
 }
