@@ -249,11 +249,10 @@ contract main is ERC1155("") {
 
     function transferNFT(address to, uint256 index, uint256 amount) external afterSpendNFT(index) {
         uint256 id = ownNFTs[msg.sender][index];
-        _safeTransferFrom(msg.sender, to, id, amount, "");
-
         if (balanceOf(to, id) == 0) {
             ownNFTs[to].push(id);
         }
+        _safeTransferFrom(msg.sender, to, id, amount, "");
     }
 
     function startAuction(uint256 collectionIndex, uint256 asideTime, uint256 duration, uint256 startPrice, uint256 maxPrice) external onlyOwner {
@@ -300,6 +299,11 @@ contract main is ERC1155("") {
             bets[index].push(Bet(msg.sender, sum));
             auctions[index].lastBet = bets[index][betsCount];
         }
+
+        if (auctions[index].lastBet.sum >= auctions[index].maxPrice) {
+            auctions[index].timeEnd = block.timestamp;
+            _sendWinning(index);
+        }
     }
 
     function getNFTCollection(uint256 NFTid) external view returns(uint256) {
@@ -310,7 +314,7 @@ contract main is ERC1155("") {
         return activatedReferal[msg.sender];
     }
 
-    function getAuctions() external view returns(Auction[] memory)  {
+    function getAuctions() external view returns(Auction[] memory) {
         return auctions;
     }
 
@@ -381,7 +385,11 @@ contract main is ERC1155("") {
         uint256[] memory amounts = new uint256[](ids.length);
         wonLots[winner].push(index);
         for (uint256 i = 0; i < ids.length; i++) {
-            amounts[i] = balanceOf(msg.sender, ids[i]);
+            amounts[i] = balanceOf(owner, ids[i]);
+            if (balanceOf(winner, ids[i]) == 0) {
+                ownNFTs[winner].push(ids[i]);
+            }
+            delete ownNFTs[owner][index];
         }
         _safeBatchTransferFrom(owner, winner, ids, amounts, "");
     }
