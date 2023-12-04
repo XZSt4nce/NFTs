@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
 import "ERC20.sol";
 
+// Интерфейс реализующий работу с токеном стандарта ERC20
 interface IProfi is IERC20 {
     function mintReferal(address) external;
     function decimals() external pure returns (uint8);
@@ -11,18 +12,24 @@ interface IProfi is IERC20 {
 }
 
 contract main is ERC1155("") {
+    /*
+        Структура для рефералов
+        Содержит:
+            адрес пользователя, предоставившего код,
+            скидка
+    */
     struct Referal {
         address provider;
         uint8 discount;
     }
-
+    // Структура коллекции
     struct Collection {
         uint256 id;
         string title;
         string description;
         uint256[] ids;
     }
-
+    // Структура обособленного NFT
     struct Asset {
         uint256 id;
         string title;
@@ -33,12 +40,12 @@ contract main is ERC1155("") {
         uint256 available;
         uint256 creation_date;
     }
-
+    // Структура ставки
     struct Bet {
         address wallet;
         uint256 sum;
     }
-
+    // Структура лота на аукционе
     struct Auction {
         Collection collection;
         uint256 timeStart;
@@ -47,7 +54,7 @@ contract main is ERC1155("") {
         uint256 maxPrice;
         Bet lastBet;
     }
-
+    // Структура для продажи обособленного NFT
     struct Sell {
         address seller;
         uint256 NFTid;
@@ -55,34 +62,37 @@ contract main is ERC1155("") {
         uint256 price;
     }
 
-    IProfi private profi;
-    address private owner = msg.sender;
+    IProfi private profi; // Переменная для работы с токенами ERC20
+    address private owner = msg.sender; // Владелец контракта
     
-    Asset[] private assets;
-    Auction[] private auctions;
-    Collection[] private collections;
-    Sell[] private sells;
-    uint256[] private ownerCollections;
+    Asset[] private assets; // Массив всех NFT
+    Auction[] private auctions; // Массив всех лотов
+    Collection[] private collections; // Массив всех коллекций
+    Sell[] private sells; // Массив всех продаж
+    uint256[] private ownerCollections; // Массив коллекций, принадлежащий пользователю
 
-    mapping(string => Referal) private codeToReferal;
-    mapping(address => string) private ownerToCode;
-    mapping(address => bool) private activatedReferal;
-    mapping(uint256 => uint256) private NFTtoCollection;
-    mapping(address => uint256[]) private ownNFTs;
-    mapping(uint256 => Bet[]) private bets;
-    mapping(address => uint256[]) private wonLots;
+    mapping(string => Referal) private codeToReferal; // Доступ к структуре для реферала по коду
+    mapping(address => string) private ownerToCode; // Доступ к коду по адресу его создателя
+    mapping(address => bool) private activatedReferal; // Активировал ли код пользователь по указанному адресу
+    mapping(uint256 => uint256) private NFTtoCollection; // Принадлежность NFT к коллекции по ID
+    mapping(address => uint256[]) private ownNFTs; // Доступ к собственным NFT по адресу
+    mapping(uint256 => Bet[]) private bets; // Доступ ко всем ставкам по индексу лота
+    mapping(address => uint256[]) private wonLots; // Доступ к выигранным лотам по адресу пользователя
 
+    // Выполнение метода только в случае, если вызывающий его пользователь является владельцем контракта
     modifier onlyOwner {
         require(msg.sender == owner, unicode"Недостаточно прав");
         _;
     }
 
+    // Выполнение метода только в случае, если лот по указанному индексу – активен
     modifier auctionIsActive(uint256 index) {
         require(auctions[index].timeStart <= block.timestamp, unicode"Аукцион ещё не начался");
         require(block.timestamp < auctions[index].timeEnd, unicode"Лот неактивен");
         _;
     }
 
+    // Если после траты обособленных NFT у пользователя их не остаётся, то они удаляются из собственности
     modifier afterSpendNFT(uint256 index) {
         _;
         if (balanceOf(msg.sender, ownNFTs[msg.sender][index]) == 0) {
@@ -91,7 +101,8 @@ contract main is ERC1155("") {
     }
 
     constructor(address profiAddress) {
-        profi = IProfi(profiAddress);
+        profi = IProfi(profiAddress); // Реализация методов интерфейса по адресу контракта, реализуещего их
+        // Инициализация начальных NFT для создания коллекций и присваивание их владельцу системы
         assets.push(Asset(
             1,
             unicode"Комочек", 
@@ -152,6 +163,10 @@ contract main is ERC1155("") {
         _mint(msg.sender, 5, 1, "");
     }
 
+    /*
+        Создание кода для рефералов, если пользователь его ещё не создавал и подобный код не существует
+        Вход: адрес пользователя
+    */
     function createReferal(string calldata wallet) external {
         require(codeToReferal[ownerToCode[msg.sender]].provider == address(0), unicode"Вы уже создали реферальный код");
         string memory code = string.concat("PROFI-", wallet[2:6], "2023");
@@ -160,6 +175,12 @@ contract main is ERC1155("") {
         codeToReferal[code] = Referal(msg.sender, 0);
     }
 
+    /*
+        Активация реферального кода
+        Если пользователь не активировал код и код валидный, то пользователю начисляется 100 PROFI,
+        а создавшему код пользователю начисляется +1% скидка, если она уже не превышает 3%
+        Вход: реферальный код
+    */
     function activateReferalCode(string calldata code) external {
         require(!activatedReferal[msg.sender], unicode"Вы уже активировали реферальный код");
         require(codeToReferal[code].provider != address(0), unicode"Такого кода нет");
@@ -171,6 +192,13 @@ contract main is ERC1155("") {
         }
     }
 
+    /*
+        Продажа обособленного NFT, который не состоит в данный момент в коллекции
+        Вход:
+            индекс на NFT, которой владеет пользователь,
+            количество NFT,
+            цена продажи
+    */
     function sellNFT(uint256 index, uint256 amount, uint256 price) external afterSpendNFT(index) {
         uint256 id = ownNFTs[msg.sender][index];
         require(NFTtoCollection[id] == 0 || msg.sender != owner, unicode"Вы не можете продать часть коллекции");
@@ -186,9 +214,16 @@ contract main is ERC1155("") {
             sells.push(Sell(msg.sender, id, amount, price));
         }
 
+        assets[id - 1].available += amount;
         _burn(msg.sender, id, amount);
     }
 
+    /*
+        Покупка обособленного NFT
+        Вход:
+            индекс продаваемой NFT,
+            количество покупаемого NFT
+    */
     function buyNFT(uint256 index, uint256 amount) external {
         require(amount <= sells[index].amount, unicode"Нельзя купить больше, чем продаётся");
         uint256 price = sells[index].price - sells[index].price * codeToReferal[ownerToCode[msg.sender]].discount / 100;
@@ -197,15 +232,27 @@ contract main is ERC1155("") {
         if (balanceOf(msg.sender, sells[index].NFTid) == 0) {
             ownNFTs[msg.sender].push(sells[index].NFTid);
         }
-        _mint(msg.sender, sells[index].NFTid, amount, "");
 
         if (sells[index].amount == amount) {
             delete sells[index];
         } else {
             sells[index].amount -= amount;
         }
+
+        assets[sells[index].NFTid - 1].available -= amount;
+        _mint(msg.sender, sells[index].NFTid, amount, "");
     }
 
+    /*
+        Создать новую NFT.
+        Создавать NFT имеет право только владелец системы.
+        Вход:
+            название,
+            описание,
+            путь к картинке,
+            ценность,
+            количество выпускаемых
+    */
     function createSingleNFT(
         string memory title,
         string memory description,
@@ -229,6 +276,15 @@ contract main is ERC1155("") {
         _mint(owner, tokenNumber, issued, "");
     }
 
+    /*
+        Создание коллекции из существующих обособленных NFT.
+        Создавать коллекции имеет право только владелец системы.
+        Ни одна из обособленных NFT не должна принадлежать ни какой из коллекций.
+        Вход:
+            название,
+            описание,
+            идентификаторы NFT
+    */
     function createCollectionNFT(
         string memory collectionTitle,
         string memory collectionDescription,
@@ -256,6 +312,16 @@ contract main is ERC1155("") {
         _safeTransferFrom(msg.sender, to, id, amount, "");
     }
 
+    /*
+        Начать отложенный аукцион.
+        Может выполнить только владелец системы.
+        Вход:
+            индекс коллекции,
+            через сколько секунд начать аукцион,
+            через сколько секунд после начала закончить аукцион,
+            стартовая цена,
+            максимальная цена
+    */
     function startAuction(uint256 collectionIndex, uint256 asideTime, uint256 duration, uint256 startPrice, uint256 maxPrice) external onlyOwner {
         require(ownerCollections[collectionIndex] != 0, unicode"Коллекции не существует");
         require(maxPrice > startPrice, unicode"Максимальная ставка должна быть больше стартовой");
@@ -270,6 +336,11 @@ contract main is ERC1155("") {
         delete ownerCollections[collectionIndex];
     }
 
+    /*
+        Если время лота по данному индексу истекло, то передать NFT из коллекции лидеру ставок.
+        Может выполнить только владелец системы.
+        Вход: индекс лота
+    */
     function checkAuctionExpired(uint256 index) external onlyOwner {
         require(auctions[index].maxPrice != 0, unicode"Лот не существует");
         if (block.timestamp > auctions[index].timeEnd) {
@@ -277,11 +348,20 @@ contract main is ERC1155("") {
         }
     }
 
+    /*
+        Досрочно закончить аукцион.
+        Может выполнить только владелец системы.
+        Вход: индекс лота
+    */
     function finishAuction(uint256 index) external onlyOwner auctionIsActive(index) {
         auctions[index].timeEnd = block.timestamp;
         _sendWinning(index);
     }
 
+    /*
+        Сделать или увеличить ставку на активный лот.
+        Вход: индекс лота, сумма ставки
+    */
     function bid(uint256 index, uint256 sum) external auctionIsActive(index) {
         profi.transferToken(msg.sender, owner, sum);
         bool notFound = true;
@@ -307,22 +387,37 @@ contract main is ERC1155("") {
         }
     }
 
+    /*
+        Вход: идентификатор NFT
+        Выход: коллекция, к которой принадлежит NFT
+    */
     function getNFTCollection(uint256 NFTid) external view returns(uint256) {
         return NFTtoCollection[NFTid];
     }
 
+    // Выход: активировал ли реферальный код пользователь, вызывающий метод
     function getActivatedReferal() external view returns(bool) {
         return activatedReferal[msg.sender];
     }
 
+    // Выход: все лоты аукциона
     function getAuctions() external view returns(Auction[] memory) {
         return auctions;
     }
 
+    /*
+        Вход: индекс лота
+        Выход: все ставки на лот
+    */
     function getBets(uint256 auctionIndex) external view returns(Bet[] memory) {
         return bets[auctionIndex];
     }
 
+    /*
+        Вернуть ставку на лот пользователя, вызывающего метод
+        Вход: индекс лота
+        Выход: структура ставки
+    */
     function getMyBet(uint256 auctionIndex) external view returns(Bet memory) {
         for (uint256 i = 0; i < bets[auctionIndex].length; i++) {
             if (bets[auctionIndex][i].wallet == msg.sender) {
@@ -332,22 +427,31 @@ contract main is ERC1155("") {
         return Bet(address(0), 0);
     }
 
+    // Выход: все активные продажи NFT
     function getSells() external view returns(Sell[] memory) {
         return sells;
     }
 
+    /*
+        Вернуть информацию по конкретному NFT
+        Вход: идентификатор NFT
+        Выход: структура NFT
+    */
     function getAsset(uint256 id) external view returns(Asset memory) {
         return assets[id - 1];
     }
 
+    // Выход: все NFT
     function getAssets() external view returns(Asset[] memory) {
         return assets;
     }
 
+    // Выход: все коллекции
     function getCollections() external view returns(Collection[] memory) {
         return collections;
     }
 
+    // Выход: структуры NFT и их количество, принадлежащих пользователю, который вызывает метод
     function getMyNFTs() external view returns(Asset[] memory, uint256[] memory) {
         address[] memory sender = new address[](ownNFTs[msg.sender].length);
         Asset[] memory NFTs = new Asset[](ownNFTs[msg.sender].length);
@@ -360,26 +464,39 @@ contract main is ERC1155("") {
         return (NFTs, balanceOfBatch(sender, ownNFTs[msg.sender]));
     }
 
+    /*
+        Вернуть все коллекции, которые принадлежат владельцу системы.
+        Может выполнить только владелец системы.
+        Выход: идентификаторы коллекций
+    */
     function getOwnerCollections() external view onlyOwner returns(uint256[] memory) {
         return ownerCollections;
     }
 
+    // Выход: баланс PROFI пользователя, вызывающего метод
     function getBalance() external view returns(uint256) {
         return profi.balanceOf(msg.sender);
     }
 
+    // Выход: скидка на покупки пользователя, вызывающего метод
     function getMyDiscount() external view returns(uint256) {
         return codeToReferal[ownerToCode[msg.sender]].discount;
     }
 
+    // Выход: код пользователя, вызывающего метод
     function getMyCode() external view returns(string memory) {
         return ownerToCode[msg.sender];
     }
 
+    // Выход: идентификаторы выигранных лотов пользователя, вызывающего метод
     function getWonLots() external view returns(uint256[] memory) {
         return wonLots[msg.sender];
     }
 
+    /*
+        Внутренний метод для выдачи NFT из коллекции победителю аукциона
+        Вход: индекс лота
+    */
     function _sendWinning(uint256 index) private {
         address winner = auctions[index].lastBet.wallet;
         uint256[] memory ids = auctions[index].collection.ids;
