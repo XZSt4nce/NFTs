@@ -191,7 +191,8 @@ contract main is ERC1155("") {
 
     function buyNFT(uint256 index, uint256 amount) external {
         require(amount <= sells[index].amount, unicode"Нельзя купить больше, чем продаётся");
-        profi.transferToken(msg.sender, sells[index].seller, sells[index].price * amount * (codeToReferal[ownerToCode[msg.sender]].discount / 100));
+        uint256 price = sells[index].price - sells[index].price * codeToReferal[ownerToCode[msg.sender]].discount / 100;
+        profi.transferToken(msg.sender, sells[index].seller, price * sells[index].amount);
 
         if (balanceOf(msg.sender, sells[index].NFTid) == 0) {
             ownNFTs[msg.sender].push(sells[index].NFTid);
