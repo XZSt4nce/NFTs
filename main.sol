@@ -69,7 +69,7 @@ contract main is ERC1155("") {
     Auction[] private auctions; // Массив всех лотов
     Collection[] private collections; // Массив всех коллекций
     Sell[] private sells; // Массив всех продаж
-    uint256[] private ownerCollections; // Массив коллекций, принадлежащий пользователю
+    uint256[] private ownerCollections; // Массив коллекций, принадлежащий владельцу
 
     mapping(string => Referal) private codeToReferal; // Доступ к структуре для реферала по коду
     mapping(address => string) private ownerToCode; // Доступ к коду по адресу его создателя
@@ -219,6 +219,15 @@ contract main is ERC1155("") {
     }
 
     /*
+        Изменение цены продаваемой пользователем NFT
+        Вход: индекс продаваемой NFT, новая цена
+    */
+    function changeSellPrice(uint256 index, uint256 price) external {
+        require(sells[index].seller == msg.sender, unicode"Это не ваш NFT");
+        sells[index].price = price;
+    }
+
+    /*
         Покупка обособленного NFT
         Вход:
             индекс продаваемой NFT,
@@ -304,6 +313,13 @@ contract main is ERC1155("") {
         ownerCollections.push(collectionNumber);
     }
 
+    /*
+        Безвозмездный перевод NFT пользователю
+        Вход:
+            адрес пользователя,
+            индекс собственной NFT,
+            количество NFT
+    */
     function transferNFT(address to, uint256 index, uint256 amount) external afterSpendNFT(index) {
         uint256 id = ownNFTs[msg.sender][index];
         if (balanceOf(to, id) == 0) {
@@ -363,6 +379,7 @@ contract main is ERC1155("") {
         Вход: индекс лота, сумма ставки
     */
     function bid(uint256 index, uint256 sum) external auctionIsActive(index) {
+        require(auctions[index].lastBet.wallet != msg.sender, unicode"Вы уже лидер");
         profi.transferToken(msg.sender, owner, sum);
         bool notFound = true;
         uint256 betsCount = bets[index].length;
