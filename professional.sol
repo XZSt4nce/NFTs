@@ -5,9 +5,9 @@ import "ERC20.sol";
 
 contract proffesional is ERC20("Proffesional", "PROFI") {
     constructor() {
-        address tom = 0xAb8483F64d9C6d1EcF9b849Ae677dD3315835cb2;
-        address max = 0x4B20993Bc481177ec7E8f571ceCaE8A9e22C02db;
-        address jack = 0x78731D3Ca6b7E34aC0F824c42a7cC18A495cabaB;
+        address tom = 0x0Bc37Ab3FcAfafb8ff50d170f8252e1218ec8be9;
+        address max = 0x63CE638501e1d1C58b74a9BD2cf521967F5CaF3c;
+        address jack = 0x2BaEA19d49bF26Cbc03bEC95B9EAD891DD624f2d;
 
         _mint(msg.sender, 100_000 * 10**decimals());
         _mint(tom, 200_000 * 10**decimals());

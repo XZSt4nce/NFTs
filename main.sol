@@ -147,7 +147,7 @@ contract main is ERC1155("") {
             5,
             unicode"Волшебник", 
             unicode"Он идет колдовать", 
-            "walker_nft1.png", 
+            "walker_nft2.png", 
             0, 
             1,
             0, 
@@ -458,14 +458,9 @@ contract main is ERC1155("") {
         return assets[id - 1];
     }
 
-    // Выход: все NFT
-    function getAssets() external view returns(Asset[] memory) {
-        return assets;
-    }
-
     // Выход: все коллекции
-    function getCollections() external view returns(Collection[] memory) {
-        return collections;
+    function getCollection(uint256 id) external view returns(Collection memory) {
+        return collections[id - 1];
     }
 
     // Выход: структуры NFT и их количество, принадлежащих пользователю, который вызывает метод
@@ -484,10 +479,14 @@ contract main is ERC1155("") {
     /*
         Вернуть все коллекции, которые принадлежат владельцу системы.
         Может выполнить только владелец системы.
-        Выход: идентификаторы коллекций
+        Выход: массив коллекций
     */
-    function getOwnerCollections() external view onlyOwner returns(uint256[] memory) {
-        return ownerCollections;
+    function getOwnerCollections() external view onlyOwner returns(Collection[] memory) {
+        Collection[] memory ownColls = new Collection[](ownerCollections.length);
+        for (uint256 i = 0; i < ownerCollections.length; i++) {
+            ownColls[i] = collections[ownerCollections[i] - 1];
+        }
+        return ownColls;
     }
 
     // Выход: баланс PROFI пользователя, вызывающего метод
