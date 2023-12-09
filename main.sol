@@ -39,6 +39,7 @@ contract main is ERC1155("") {
         uint256 issued;
         uint256 available;
         uint256 creation_date;
+        uint256 collection;
     }
     // Структура ставки
     struct Bet {
@@ -74,7 +75,6 @@ contract main is ERC1155("") {
     mapping(string => Referal) private codeToReferal; // Доступ к структуре для реферала по коду
     mapping(address => string) private ownerToCode; // Доступ к коду по адресу его создателя
     mapping(address => bool) private activatedReferal; // Активировал ли код пользователь по указанному адресу
-    mapping(uint256 => uint256) private NFTtoCollection; // Принадлежность NFT к коллекции по ID
     mapping(address => uint256[]) private ownNFTs; // Доступ к собственным NFT по адресу
     mapping(uint256 => Bet[]) private bets; // Доступ ко всем ставкам по индексу лота
     mapping(address => uint256[]) private wonLots; // Доступ к выигранным лотам по адресу пользователя
@@ -111,7 +111,8 @@ contract main is ERC1155("") {
             0, 
             1,
             0, 
-            block.timestamp
+            block.timestamp,
+            0
         ));
         assets.push(Asset(
             2,
@@ -121,7 +122,8 @@ contract main is ERC1155("") {
             0, 
             1,
             0, 
-            block.timestamp
+            block.timestamp,
+            0
         ));
         assets.push(Asset(
             3,
@@ -131,7 +133,8 @@ contract main is ERC1155("") {
             0, 
             1,
             0, 
-            block.timestamp
+            block.timestamp,
+            0
         ));
         assets.push(Asset(
             4,
@@ -141,7 +144,8 @@ contract main is ERC1155("") {
             0, 
             1,
             0, 
-            block.timestamp
+            block.timestamp,
+            0
         ));
         assets.push(Asset(
             5,
@@ -151,7 +155,8 @@ contract main is ERC1155("") {
             0, 
             1,
             0, 
-            block.timestamp
+            block.timestamp,
+            0
         ));
 
         ownNFTs[msg.sender] = [1, 2, 3, 4, 5];
@@ -201,7 +206,7 @@ contract main is ERC1155("") {
     */
     function sellNFT(uint256 index, uint256 amount, uint256 price) external afterSpendNFT(index) {
         uint256 id = ownNFTs[msg.sender][index];
-        require(NFTtoCollection[id] == 0 || msg.sender != owner, unicode"Вы не можете продать часть коллекции");
+        require(assets[id - 1].collection == 0 || msg.sender != owner, unicode"Вы не можете продать часть коллекции");
         bool notFound = true;
         for (uint256 i = 0; i < sells.length; i++) {
             if (sells[i].seller == msg.sender && sells[i].price == price && sells[i].NFTid == id) {
@@ -234,22 +239,24 @@ contract main is ERC1155("") {
             количество покупаемого NFT
     */
     function buyNFT(uint256 index, uint256 amount) external {
-        require(amount <= sells[index].amount, unicode"Нельзя купить больше, чем продаётся");
-        uint256 price = sells[index].price - sells[index].price * codeToReferal[ownerToCode[msg.sender]].discount / 100;
-        profi.transferToken(msg.sender, sells[index].seller, price * sells[index].amount);
+        Sell memory sell = sells[index];
+        require(amount <= sell.amount, unicode"Нельзя купить больше, чем продаётся");
+        require(msg.sender != sell.seller, unicode"Нельзя купить свой NFT");
+        uint256 price = sell.price - sell.price * codeToReferal[ownerToCode[msg.sender]].discount / 100;
+        profi.transferToken(msg.sender, sell.seller, price * sell.amount);
 
-        if (balanceOf(msg.sender, sells[index].NFTid) == 0) {
-            ownNFTs[msg.sender].push(sells[index].NFTid);
+        if (balanceOf(msg.sender, sell.NFTid) == 0) {
+            ownNFTs[msg.sender].push(sell.NFTid);
         }
 
-        if (sells[index].amount == amount) {
+        if (sell.amount == amount) {
             delete sells[index];
         } else {
             sells[index].amount -= amount;
         }
 
-        assets[sells[index].NFTid - 1].available -= amount;
-        _mint(msg.sender, sells[index].NFTid, amount, "");
+        assets[sell.NFTid - 1].available -= amount;
+        _mint(msg.sender, sell.NFTid, amount, "");
     }
 
     /*
@@ -278,7 +285,8 @@ contract main is ERC1155("") {
             price, 
             issued, 
             0, 
-            block.timestamp
+            block.timestamp,
+            0
         ));
         ownNFTs[msg.sender].push(tokenNumber);
         
@@ -303,9 +311,9 @@ contract main is ERC1155("") {
 
         for (uint256 i = 0; i < ids.length; i++) {
             uint256 id = ids[i];
-            require(NFTtoCollection[id] == 0, unicode"Один из токенов уже состоит в коллекции");
+            require(assets[id - 1].collection == 0, unicode"Один из токенов уже состоит в коллекции");
             require(assets[id - 1].issued > 0, unicode"Одного из токенов не существует");
-            NFTtoCollection[id] = collectionNumber;
+            assets[id - 1].collection = collectionNumber;
         }
 
         Collection memory newCollection = Collection(collectionNumber, collectionTitle, collectionDescription, ids);
@@ -404,14 +412,6 @@ contract main is ERC1155("") {
         }
     }
 
-    /*
-        Вход: идентификатор NFT
-        Выход: коллекция, к которой принадлежит NFT
-    */
-    function getNFTCollection(uint256 NFTid) external view returns(uint256) {
-        return NFTtoCollection[NFTid];
-    }
-
     // Выход: активировал ли реферальный код пользователь, вызывающий метод
     function getActivatedReferal() external view returns(bool) {
         return activatedReferal[msg.sender];
@@ -456,6 +456,14 @@ contract main is ERC1155("") {
     */
     function getAsset(uint256 id) external view returns(Asset memory) {
         return assets[id - 1];
+    }
+
+    function getAssets(uint256[] memory ids) external view returns(Asset[] memory) {
+        Asset[] memory selectedAssets = new Asset[](ids.length);
+        for (uint256 i = 0; i < ids.length; i++) {
+            selectedAssets[i] = assets[ids[i] - 1];
+        }
+        return selectedAssets;
     }
 
     // Выход: все коллекции
