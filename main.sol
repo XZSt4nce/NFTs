@@ -54,6 +54,7 @@ contract main is ERC1155("") {
         uint256 startPrice;
         uint256 maxPrice;
         Bet lastBet;
+        bool isActive;
     }
     // Структура для продажи обособленного NFT
     struct Sell {
@@ -89,14 +90,19 @@ contract main is ERC1155("") {
     modifier auctionIsActive(uint256 index) {
         require(auctions[index].timeStart <= block.timestamp, unicode"Аукцион ещё не начался");
         require(block.timestamp < auctions[index].timeEnd, unicode"Лот неактивен");
+        auctions[index].isActive = true;
         _;
     }
 
     // Если после траты обособленных NFT у пользователя их не остаётся, то они удаляются из собственности
-    modifier afterSpendNFT(uint256 index) {
+    modifier afterSpendNFT(uint256 id) {
         _;
-        if (balanceOf(msg.sender, ownNFTs[msg.sender][index]) == 0) {
-            delete ownNFTs[msg.sender][index];
+        for (uint256 i = 0; i < ownNFTs[msg.sender].length; i++) {
+            if (ownNFTs[msg.sender][i] == id) {
+                if (balanceOf(msg.sender, ownNFTs[msg.sender][i]) == 0) {
+                    delete ownNFTs[msg.sender][i];
+                }
+            }
         }
     }
 
@@ -204,8 +210,7 @@ contract main is ERC1155("") {
             количество NFT,
             цена продажи
     */
-    function sellNFT(uint256 index, uint256 amount, uint256 price) external afterSpendNFT(index) {
-        uint256 id = ownNFTs[msg.sender][index];
+    function sellNFT(uint256 id, uint256 amount, uint256 price) external afterSpendNFT(id) {
         require(assets[id - 1].collection == 0 || msg.sender != owner, unicode"Вы не можете продать часть коллекции");
         bool notFound = true;
         for (uint256 i = 0; i < sells.length; i++) {
@@ -328,8 +333,7 @@ contract main is ERC1155("") {
             индекс собственной NFT,
             количество NFT
     */
-    function transferNFT(address to, uint256 index, uint256 amount) external afterSpendNFT(index) {
-        uint256 id = ownNFTs[msg.sender][index];
+    function transferNFT(address to, uint256 id, uint256 amount) external afterSpendNFT(id) {
         if (balanceOf(to, id) == 0) {
             ownNFTs[to].push(id);
         }
@@ -346,18 +350,28 @@ contract main is ERC1155("") {
             стартовая цена,
             максимальная цена
     */
-    function startAuction(uint256 collectionIndex, uint256 asideTime, uint256 duration, uint256 startPrice, uint256 maxPrice) external onlyOwner {
-        require(ownerCollections[collectionIndex] != 0, unicode"Коллекции не существует");
+    function startAuction(uint256 collectionID, uint256 asideTime, uint256 duration, uint256 startPrice, uint256 maxPrice) external onlyOwner {
+        require(collectionID > 0, unicode"Коллекции не существует");
         require(maxPrice > startPrice, unicode"Максимальная ставка должна быть больше стартовой");
         auctions.push(Auction(
-            collections[ownerCollections[collectionIndex] - 1], 
+            collections[collectionID - 1], 
             block.timestamp + asideTime, 
             block.timestamp + asideTime + duration, 
             startPrice, 
             maxPrice, 
-            Bet(msg.sender, startPrice)
+            Bet(msg.sender, startPrice),
+            asideTime == 0
         ));
-        delete ownerCollections[collectionIndex];
+
+        uint256 collectionIndex = 0;
+        for (uint256 i = 0; i < ownerCollections.length; i++) {
+            if (ownerCollections[i] == collectionID) {
+                collectionIndex = i + 1;
+                break;
+            }
+        }
+        require(collectionIndex != 0, unicode"У Вас нет этой коллекции");
+        delete ownerCollections[collectionIndex - 1];
     }
 
     /*
@@ -367,7 +381,8 @@ contract main is ERC1155("") {
     */
     function checkAuctionExpired(uint256 index) external onlyOwner {
         require(auctions[index].maxPrice != 0, unicode"Лот не существует");
-        if (block.timestamp > auctions[index].timeEnd) {
+        if (block.timestamp > auctions[index].timeEnd && auctions[index].isActive) {
+            auctions[index].isActive = false;
             _sendWinning(index);
         }
     }
@@ -492,9 +507,15 @@ contract main is ERC1155("") {
     function getOwnerCollections() external view onlyOwner returns(Collection[] memory) {
         Collection[] memory ownColls = new Collection[](ownerCollections.length);
         for (uint256 i = 0; i < ownerCollections.length; i++) {
-            ownColls[i] = collections[ownerCollections[i] - 1];
+            if (ownerCollections[i] != 0) {
+                ownColls[i] = collections[ownerCollections[i] - 1];
+            }
         }
         return ownColls;
+    }
+
+    function test() external view returns(uint256[] memory) {
+        return ownerCollections;
     }
 
     // Выход: баланс PROFI пользователя, вызывающего метод
@@ -514,7 +535,11 @@ contract main is ERC1155("") {
 
     // Выход: идентификаторы выигранных лотов пользователя, вызывающего метод
     function getWonLots() external view returns(uint256[] memory) {
-        return wonLots[msg.sender];
+        uint256[] memory collectionIds = new uint256[](wonLots[msg.sender].length);
+        for (uint256 i = 0; i < wonLots[msg.sender].length; i++) {
+            collectionIds[i] = auctions[wonLots[msg.sender][i]].collection.id;
+        }
+        return collectionIds;
     }
 
     /*
@@ -522,6 +547,7 @@ contract main is ERC1155("") {
         Вход: индекс лота
     */
     function _sendWinning(uint256 index) private {
+        auctions[index].isActive = false;
         address winner = auctions[index].lastBet.wallet;
         uint256[] memory ids = auctions[index].collection.ids;
         uint256[] memory amounts = new uint256[](ids.length);
