@@ -671,16 +671,20 @@ contract main is ERC1155("") {
     function _sendWinning(uint256 index) private {
         auctions[index].isActive = false;
         address winner = auctions[index].lastBet.wallet;
-        uint256[] memory ids = auctions[index].collection.ids;
-        uint256[] memory amounts = new uint256[](ids.length);
-        wonLots[winner].push(index);
-        for (uint256 i = 0; i < ids.length; i++) {
-            amounts[i] = balanceOf(owner, ids[i]);
-            if (balanceOf(winner, ids[i]) == 0) {
-                ownNFTs[winner].push(ids[i]);
+        if (winner != owner) {
+            uint256[] memory ids = auctions[index].collection.ids;
+            uint256[] memory amounts = new uint256[](ids.length);
+            wonLots[winner].push(index);
+            for (uint256 i = 0; i < ids.length; i++) {
+                amounts[i] = balanceOf(owner, ids[i]);
+                if (balanceOf(winner, ids[i]) == 0) {
+                    ownNFTs[winner].push(ids[i]);
+                }
+                delete ownNFTs[owner][index];
             }
-            delete ownNFTs[owner][index];
+            _safeBatchTransferFrom(owner, winner, ids, amounts, "");
+        } else {
+            ownerCollections.push(auctions[index].collection.id);
         }
-        _safeBatchTransferFrom(owner, winner, ids, amounts, "");
     }
 }
