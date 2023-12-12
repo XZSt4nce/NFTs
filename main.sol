@@ -7,8 +7,14 @@ import "ERC20.sol";
 // Интерфейс реализующий работу с токеном стандарта ERC20
 interface IProfi is IERC20 {
     function mintReferal(address) external;
+
     function decimals() external pure returns (uint8);
-    function transferToken(address, address, uint256) external;
+
+    function transferToken(
+        address,
+        address,
+        uint256
+    ) external;
 }
 
 contract main is ERC1155("") {
@@ -66,7 +72,7 @@ contract main is ERC1155("") {
 
     IProfi private profi; // Переменная для работы с токенами ERC20
     address private owner = msg.sender; // Владелец контракта
-    
+
     Asset[] private assets; // Массив всех NFT
     Auction[] private auctions; // Массив всех лотов
     Collection[] private collections; // Массив всех коллекций
@@ -81,15 +87,21 @@ contract main is ERC1155("") {
     mapping(address => uint256[]) private wonLots; // Доступ к выигранным лотам по адресу пользователя
 
     // Выполнение метода только в случае, если вызывающий его пользователь является владельцем контракта
-    modifier onlyOwner {
+    modifier onlyOwner() {
         require(msg.sender == owner, unicode"Недостаточно прав");
         _;
     }
 
     // Выполнение метода только в случае, если лот по указанному индексу – активен
     modifier auctionIsActive(uint256 index) {
-        require(auctions[index].timeStart <= block.timestamp, unicode"Аукцион ещё не начался");
-        require(block.timestamp < auctions[index].timeEnd, unicode"Лот неактивен");
+        require(
+            auctions[index].timeStart <= block.timestamp,
+            unicode"Аукцион ещё не начался"
+        );
+        require(
+            block.timestamp < auctions[index].timeEnd,
+            unicode"Лот неактивен"
+        );
         auctions[index].isActive = true;
         _;
     }
@@ -109,61 +121,71 @@ contract main is ERC1155("") {
     constructor(address profiAddress) {
         profi = IProfi(profiAddress); // Реализация методов интерфейса по адресу контракта, реализуещего их
         // Инициализация начальных NFT для создания коллекций и присваивание их владельцу системы
-        assets.push(Asset(
-            1,
-            unicode"Комочек", 
-            unicode"Комочек слился с космосом", 
-            "cat_nft1.png", 
-            0, 
-            1,
-            0, 
-            block.timestamp,
-            0
-        ));
-        assets.push(Asset(
-            2,
-            unicode"Вкусняшка", 
-            unicode"Вкусняшка впервые пробует японскую кухню", 
-            "cat_nft2.png", 
-            0, 
-            1,
-            0, 
-            block.timestamp,
-            0
-        ));
-        assets.push(Asset(
-            3,
-            unicode"Пузырик", 
-            unicode"Пузырик похитил котика с Земли", 
-            "cat_nft3.png", 
-            0, 
-            1,
-            0, 
-            block.timestamp,
-            0
-        ));
-        assets.push(Asset(
-            4,
-            unicode"Баскетболист", 
-            unicode"Он идет играть в баскетбол", 
-            "walker_nft1.png", 
-            0, 
-            1,
-            0, 
-            block.timestamp,
-            0
-        ));
-        assets.push(Asset(
-            5,
-            unicode"Волшебник", 
-            unicode"Он идет колдовать", 
-            "walker_nft2.png", 
-            0, 
-            1,
-            0, 
-            block.timestamp,
-            0
-        ));
+        assets.push(
+            Asset(
+                1,
+                unicode"Комочек",
+                unicode"Комочек слился с космосом",
+                "cat_nft1.png",
+                0,
+                1,
+                0,
+                block.timestamp,
+                0
+            )
+        );
+        assets.push(
+            Asset(
+                2,
+                unicode"Вкусняшка",
+                unicode"Вкусняшка впервые пробует японскую кухню",
+                "cat_nft2.png",
+                0,
+                1,
+                0,
+                block.timestamp,
+                0
+            )
+        );
+        assets.push(
+            Asset(
+                3,
+                unicode"Пузырик",
+                unicode"Пузырик похитил котика с Земли",
+                "cat_nft3.png",
+                0,
+                1,
+                0,
+                block.timestamp,
+                0
+            )
+        );
+        assets.push(
+            Asset(
+                4,
+                unicode"Баскетболист",
+                unicode"Он идет играть в баскетбол",
+                "walker_nft1.png",
+                0,
+                1,
+                0,
+                block.timestamp,
+                0
+            )
+        );
+        assets.push(
+            Asset(
+                5,
+                unicode"Волшебник",
+                unicode"Он идет колдовать",
+                "walker_nft2.png",
+                0,
+                1,
+                0,
+                block.timestamp,
+                0
+            )
+        );
 
         ownNFTs[msg.sender] = [1, 2, 3, 4, 5];
 
@@ -179,9 +201,15 @@ contract main is ERC1155("") {
         Вход: адрес пользователя
     */
     function createReferal(string calldata wallet) external {
-        require(codeToReferal[ownerToCode[msg.sender]].provider == address(0), unicode"Вы уже создали реферальный код");
+        require(
+            codeToReferal[ownerToCode[msg.sender]].provider == address(0),
+            unicode"Вы уже создали реферальный код"
+        );
         string memory code = string.concat("PROFI-", wallet[2:6], "2023");
-        require(codeToReferal[code].provider == address(0), unicode"Такой код уже существует");
+        require(
+            codeToReferal[code].provider == address(0),
+            unicode"Такой код уже существует"
+        );
         ownerToCode[msg.sender] = code;
         codeToReferal[code] = Referal(msg.sender, 0);
     }
@@ -193,9 +221,18 @@ contract main is ERC1155("") {
         Вход: реферальный код
     */
     function activateReferalCode(string calldata code) external {
-        require(!activatedReferal[msg.sender], unicode"Вы уже активировали реферальный код");
-        require(codeToReferal[code].provider != address(0), unicode"Такого кода нет");
-        require(codeToReferal[code].provider != msg.sender, unicode"Нельзя активировать свой реферальный код");
+        require(
+            !activatedReferal[msg.sender],
+            unicode"Вы уже активировали реферальный код"
+        );
+        require(
+            codeToReferal[code].provider != address(0),
+            unicode"Такого кода нет"
+        );
+        require(
+            codeToReferal[code].provider != msg.sender,
+            unicode"Нельзя активировать свой реферальный код"
+        );
         profi.mintReferal(msg.sender);
         activatedReferal[msg.sender] = true;
         if (codeToReferal[code].discount < 3) {
@@ -210,11 +247,22 @@ contract main is ERC1155("") {
             количество NFT,
             цена продажи
     */
-    function sellNFT(uint256 id, uint256 amount, uint256 price) external afterSpendNFT(id) {
-        require(assets[id - 1].collection == 0 || msg.sender != owner, unicode"Вы не можете продать часть коллекции");
+    function sellNFT(
+        uint256 id,
+        uint256 amount,
+        uint256 price
+    ) external afterSpendNFT(id) {
+        require(
+            assets[id - 1].collection == 0 || msg.sender != owner,
+            unicode"Вы не можете продать часть коллекции"
+        );
         bool notFound = true;
         for (uint256 i = 0; i < sells.length; i++) {
-            if (sells[i].seller == msg.sender && sells[i].price == price && sells[i].NFTid == id) {
+            if (
+                sells[i].seller == msg.sender &&
+                sells[i].price == price &&
+                sells[i].NFTid == id
+            ) {
                 notFound = false;
                 sells[i].amount += amount;
                 break;
@@ -245,9 +293,14 @@ contract main is ERC1155("") {
     */
     function buyNFT(uint256 index, uint256 amount) external {
         Sell memory sell = sells[index];
-        require(amount <= sell.amount, unicode"Нельзя купить больше, чем продаётся");
+        require(
+            amount <= sell.amount,
+            unicode"Нельзя купить больше, чем продаётся"
+        );
         require(msg.sender != sell.seller, unicode"Нельзя купить свой NFT");
-        uint256 price = sell.price - sell.price * codeToReferal[ownerToCode[msg.sender]].discount / 100;
+        uint256 price = sell.price -
+            (sell.price * codeToReferal[ownerToCode[msg.sender]].discount) /
+            100;
         profi.transferToken(msg.sender, sell.seller, price * sell.amount);
 
         if (balanceOf(msg.sender, sell.NFTid) == 0) {
@@ -282,19 +335,21 @@ contract main is ERC1155("") {
         uint256 issued
     ) external onlyOwner {
         uint256 tokenNumber = assets.length + 1;
-        assets.push(Asset(
-            tokenNumber,
-            title, 
-            description, 
-            image, 
-            price, 
-            issued, 
-            0, 
-            block.timestamp,
-            0
-        ));
+        assets.push(
+            Asset(
+                tokenNumber,
+                title,
+                description,
+                image,
+                price,
+                issued,
+                0,
+                block.timestamp,
+                0
+            )
+        );
         ownNFTs[msg.sender].push(tokenNumber);
-        
+
         _mint(owner, tokenNumber, issued, "");
     }
 
@@ -316,12 +371,23 @@ contract main is ERC1155("") {
 
         for (uint256 i = 0; i < ids.length; i++) {
             uint256 id = ids[i];
-            require(assets[id - 1].collection == 0, unicode"Один из токенов уже состоит в коллекции");
-            require(assets[id - 1].issued > 0, unicode"Одного из токенов не существует");
+            require(
+                assets[id - 1].collection == 0,
+                unicode"Один из токенов уже состоит в коллекции"
+            );
+            require(
+                assets[id - 1].issued > 0,
+                unicode"Одного из токенов не существует"
+            );
             assets[id - 1].collection = collectionNumber;
         }
 
-        Collection memory newCollection = Collection(collectionNumber, collectionTitle, collectionDescription, ids);
+        Collection memory newCollection = Collection(
+            collectionNumber,
+            collectionTitle,
+            collectionDescription,
+            ids
+        );
         collections.push(newCollection);
         ownerCollections.push(collectionNumber);
     }
@@ -333,7 +399,11 @@ contract main is ERC1155("") {
             индекс собственной NFT,
             количество NFT
     */
-    function transferNFT(address to, uint256 id, uint256 amount) external afterSpendNFT(id) {
+    function transferNFT(
+        address to,
+        uint256 id,
+        uint256 amount
+    ) external afterSpendNFT(id) {
         if (balanceOf(to, id) == 0) {
             ownNFTs[to].push(id);
         }
@@ -350,18 +420,29 @@ contract main is ERC1155("") {
             стартовая цена,
             максимальная цена
     */
-    function startAuction(uint256 collectionID, uint256 asideTime, uint256 duration, uint256 startPrice, uint256 maxPrice) external onlyOwner {
+    function startAuction(
+        uint256 collectionID,
+        uint256 asideTime,
+        uint256 duration,
+        uint256 startPrice,
+        uint256 maxPrice
+    ) external onlyOwner {
         require(collectionID > 0, unicode"Коллекции не существует");
-        require(maxPrice > startPrice, unicode"Максимальная ставка должна быть больше стартовой");
-        auctions.push(Auction(
-            collections[collectionID - 1], 
-            block.timestamp + asideTime, 
-            block.timestamp + asideTime + duration, 
-            startPrice, 
-            maxPrice, 
-            Bet(msg.sender, startPrice),
-            asideTime == 0
-        ));
+        require(
+            maxPrice > startPrice,
+            unicode"Максимальная ставка должна быть больше стартовой"
+        );
+        auctions.push(
+            Auction(
+                collections[collectionID - 1],
+                block.timestamp + asideTime,
+                block.timestamp + asideTime + duration,
+                startPrice,
+                maxPrice,
+                Bet(msg.sender, startPrice),
+                asideTime == 0
+            )
+        );
 
         uint256 collectionIndex = 0;
         for (uint256 i = 0; i < ownerCollections.length; i++) {
@@ -381,7 +462,10 @@ contract main is ERC1155("") {
     */
     function checkAuctionExpired(uint256 index) external onlyOwner {
         require(auctions[index].maxPrice != 0, unicode"Лот не существует");
-        if (block.timestamp > auctions[index].timeEnd && auctions[index].isActive) {
+        if (
+            block.timestamp > auctions[index].timeEnd &&
+            auctions[index].isActive
+        ) {
             auctions[index].isActive = false;
             _sendWinning(index);
         }
@@ -392,7 +476,11 @@ contract main is ERC1155("") {
         Может выполнить только владелец системы.
         Вход: индекс лота
     */
-    function finishAuction(uint256 index) external onlyOwner auctionIsActive(index) {
+    function finishAuction(uint256 index)
+        external
+        onlyOwner
+        auctionIsActive(index)
+    {
         auctions[index].timeEnd = block.timestamp;
         _sendWinning(index);
     }
@@ -402,21 +490,30 @@ contract main is ERC1155("") {
         Вход: индекс лота, сумма ставки
     */
     function bid(uint256 index, uint256 sum) external auctionIsActive(index) {
-        require(auctions[index].lastBet.wallet != msg.sender, unicode"Вы уже лидер");
+        require(
+            auctions[index].lastBet.wallet != msg.sender,
+            unicode"Вы уже лидер"
+        );
         profi.transferToken(msg.sender, owner, sum);
         bool notFound = true;
         uint256 betsCount = bets[index].length;
         for (uint256 i = 0; i < betsCount; i++) {
             if (bets[index][i].wallet == msg.sender) {
                 notFound = false;
-                require(bets[index][i].sum + sum > auctions[index].lastBet.sum, unicode"Маленькая ставка");
+                require(
+                    bets[index][i].sum + sum > auctions[index].lastBet.sum,
+                    unicode"Маленькая ставка"
+                );
                 bets[index][i].sum += sum;
                 auctions[index].lastBet = bets[index][i];
                 break;
             }
         }
         if (notFound) {
-            require(sum > auctions[index].lastBet.sum, unicode"Маленькая ставка");
+            require(
+                sum > auctions[index].lastBet.sum,
+                unicode"Маленькая ставка"
+            );
             bets[index].push(Bet(msg.sender, sum));
             auctions[index].lastBet = bets[index][betsCount];
         }
@@ -428,12 +525,12 @@ contract main is ERC1155("") {
     }
 
     // Выход: активировал ли реферальный код пользователь, вызывающий метод
-    function getActivatedReferal() external view returns(bool) {
+    function getActivatedReferal() external view returns (bool) {
         return activatedReferal[msg.sender];
     }
 
     // Выход: все лоты аукциона
-    function getAuctions() external view returns(Auction[] memory) {
+    function getAuctions() external view returns (Auction[] memory) {
         return auctions;
     }
 
@@ -441,7 +538,11 @@ contract main is ERC1155("") {
         Вход: индекс лота
         Выход: все ставки на лот
     */
-    function getBets(uint256 auctionIndex) external view returns(Bet[] memory) {
+    function getBets(uint256 auctionIndex)
+        external
+        view
+        returns (Bet[] memory)
+    {
         return bets[auctionIndex];
     }
 
@@ -450,7 +551,7 @@ contract main is ERC1155("") {
         Вход: индекс лота
         Выход: структура ставки
     */
-    function getMyBet(uint256 auctionIndex) external view returns(Bet memory) {
+    function getMyBet(uint256 auctionIndex) external view returns (Bet memory) {
         for (uint256 i = 0; i < bets[auctionIndex].length; i++) {
             if (bets[auctionIndex][i].wallet == msg.sender) {
                 return bets[auctionIndex][i];
@@ -460,7 +561,7 @@ contract main is ERC1155("") {
     }
 
     // Выход: все активные продажи NFT
-    function getSells() external view returns(Sell[] memory) {
+    function getSells() external view returns (Sell[] memory) {
         return sells;
     }
 
@@ -469,11 +570,15 @@ contract main is ERC1155("") {
         Вход: идентификатор NFT
         Выход: структура NFT
     */
-    function getAsset(uint256 id) external view returns(Asset memory) {
+    function getAsset(uint256 id) external view returns (Asset memory) {
         return assets[id - 1];
     }
 
-    function getAssets(uint256[] memory ids) external view returns(Asset[] memory) {
+    function getAssets(uint256[] memory ids)
+        external
+        view
+        returns (Asset[] memory)
+    {
         Asset[] memory selectedAssets = new Asset[](ids.length);
         for (uint256 i = 0; i < ids.length; i++) {
             selectedAssets[i] = assets[ids[i] - 1];
@@ -482,12 +587,20 @@ contract main is ERC1155("") {
     }
 
     // Выход: все коллекции
-    function getCollection(uint256 id) external view returns(Collection memory) {
+    function getCollection(uint256 id)
+        external
+        view
+        returns (Collection memory)
+    {
         return collections[id - 1];
     }
 
     // Выход: структуры NFT и их количество, принадлежащих пользователю, который вызывает метод
-    function getMyNFTs() external view returns(Asset[] memory, uint256[] memory) {
+    function getMyNFTs()
+        external
+        view
+        returns (Asset[] memory, uint256[] memory)
+    {
         address[] memory sender = new address[](ownNFTs[msg.sender].length);
         Asset[] memory NFTs = new Asset[](ownNFTs[msg.sender].length);
         for (uint256 i = 0; i < ownNFTs[msg.sender].length; i++) {
@@ -504,8 +617,15 @@ contract main is ERC1155("") {
         Может выполнить только владелец системы.
         Выход: массив коллекций
     */
-    function getOwnerCollections() external view onlyOwner returns(Collection[] memory) {
-        Collection[] memory ownColls = new Collection[](ownerCollections.length);
+    function getOwnerCollections()
+        external
+        view
+        onlyOwner
+        returns (Collection[] memory)
+    {
+        Collection[] memory ownColls = new Collection[](
+            ownerCollections.length
+        );
         for (uint256 i = 0; i < ownerCollections.length; i++) {
             if (ownerCollections[i] != 0) {
                 ownColls[i] = collections[ownerCollections[i] - 1];
@@ -514,28 +634,30 @@ contract main is ERC1155("") {
         return ownColls;
     }
 
-    function test() external view returns(uint256[] memory) {
-        return ownerCollections;
+    function getTime() external view returns (uint256) {
+        return block.timestamp;
     }
 
     // Выход: баланс PROFI пользователя, вызывающего метод
-    function getBalance() external view returns(uint256) {
+    function getBalance() external view returns (uint256) {
         return profi.balanceOf(msg.sender);
     }
 
     // Выход: скидка на покупки пользователя, вызывающего метод
-    function getMyDiscount() external view returns(uint256) {
+    function getMyDiscount() external view returns (uint256) {
         return codeToReferal[ownerToCode[msg.sender]].discount;
     }
 
     // Выход: код пользователя, вызывающего метод
-    function getMyCode() external view returns(string memory) {
+    function getMyCode() external view returns (string memory) {
         return ownerToCode[msg.sender];
     }
 
     // Выход: идентификаторы выигранных лотов пользователя, вызывающего метод
-    function getWonLots() external view returns(uint256[] memory) {
-        uint256[] memory collectionIds = new uint256[](wonLots[msg.sender].length);
+    function getWonLots() external view returns (uint256[] memory) {
+        uint256[] memory collectionIds = new uint256[](
+            wonLots[msg.sender].length
+        );
         for (uint256 i = 0; i < wonLots[msg.sender].length; i++) {
             collectionIds[i] = auctions[wonLots[msg.sender][i]].collection.id;
         }
