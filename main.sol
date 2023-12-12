@@ -27,6 +27,7 @@ contract main is ERC1155("") {
     struct Referal {
         address provider;
         uint8 discount;
+        address[] friends;
     }
     // Структура коллекции
     struct Collection {
@@ -211,13 +212,24 @@ contract main is ERC1155("") {
             unicode"Такой код уже существует"
         );
         ownerToCode[msg.sender] = code;
-        codeToReferal[code] = Referal(msg.sender, 0);
+        address[] memory friends;
+        codeToReferal[code] = Referal(msg.sender, 0, friends);
+    }
+
+    /*
+        Разрешить пользователю (другу) пользоваться своим реферальным кодом
+        Вход: адрес друга
+    */
+    function addFriend(address friend) external {
+        require(codeToReferal[ownerToCode[msg.sender]].provider == msg.sender, unicode"Вы не ещё создали реферальный код");
+        codeToReferal[ownerToCode[msg.sender]].friends.push(friend);
     }
 
     /*
         Активация реферального кода
         Если пользователь не активировал код и код валидный, то пользователю начисляется 100 PROFI,
         а создавшему код пользователю начисляется +1% скидка, если она уже не превышает 3%
+        Если владелец реферала не разрешил пользователю пользоваться кодом, то пользователь не может его активировать
         Вход: реферальный код
     */
     function activateReferalCode(string calldata code) external {
@@ -233,6 +245,15 @@ contract main is ERC1155("") {
             codeToReferal[code].provider != msg.sender,
             unicode"Нельзя активировать свой реферальный код"
         );
+
+        bool isFriend = false;
+        for (uint256 i = 0; i < codeToReferal[code].friends.length; i++) {
+            if (codeToReferal[code].friends[i] == msg.sender) {
+                isFriend = true;
+                break;
+            }
+        }
+        require(isFriend, unicode"Вы не можете активировать этот реферальный код");
         profi.mintReferal(msg.sender);
         activatedReferal[msg.sender] = true;
         if (codeToReferal[code].discount < 3) {
